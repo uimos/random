@@ -1,4 +1,4 @@
-#### So, who present first?
+#### So, who presents first?
 
 ## Developing
 
