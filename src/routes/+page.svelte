@@ -7,6 +7,7 @@
 	let progressTalkInput = '';
 	let randomIdealTalkArray: string[] = [];
 	let randomProgressTalkArray: string[] = [];
+	let isExtracting = false;
 
 	onMount(() => {
 		randomIdeaArrayStore.subscribe((value) => {
@@ -18,8 +19,6 @@
 		ideaTalkInput = localStorage.getItem('randomIdeaName') || '';
 		progressTalkInput = localStorage.getItem('randomProgressName') || '';
 	});
-
-  
 
 	function shuffleArray(array: string[]) {
 		for (var i = array.length - 1; i > 0; i--) {
@@ -64,6 +63,29 @@
 		localStorage.removeItem('randomIdeaName');
 		localStorage.removeItem('randomProgressName');
 	}
+
+	async function extractFormResponses() {
+		let ideaTalks: string[] = [];
+		let progressTalks: string[] = [];
+		let url: string = 'https://script.google.com/macros/s/AKfycbwzW7HkzwOnFGcKGKL4Hbi5WebdtXLs8HJsWPtnPi416remuW5Bgg1mVXrpHuR_sHoy/exec';
+
+		isExtracting = true;
+		let formResponses = await fetch(url);
+		let formResult = await formResponses.json();
+
+		Object.keys(formResult).forEach((idx: string) => {
+			console.log(formResult[idx].Name);
+			if (formResult[idx]['Type of talk'] === 'IdeaTalk') {
+				ideaTalks.push(formResult[idx].Name);
+			} else {
+				progressTalks.push(formResult[idx].Name);
+			}
+		});
+
+		ideaTalkInput = ideaTalks.join('\n');
+		progressTalkInput = progressTalks.join('\n');
+		isExtracting = false;
+	}
 </script>
 
 <svelte:head>
@@ -96,7 +118,7 @@ Danny"
 			></textarea>
 		</div>
 		<div class="w-1/2">
-      <p class="font-semibold my-2 text-sm">ProgressTalk</p>
+			<p class="font-semibold my-2 text-sm">ProgressTalk</p>
 			<textarea
 				bind:value={progressTalkInput}
 				class="text-black p-2 w-full rounded border-slate-300 border-2 monospace"
@@ -122,16 +144,22 @@ Danny"
 		>
 			Clear All
 		</button>
+		<button
+			class="bg-red-500 hover:bg-orange-500 text-white py-2 px-4 rounded text-sm flex items-center mb-2"
+			on:click={extractFormResponses}
+		>
+			{isExtracting ? 'Extracting...' : 'Extract'}
+		</button>
 	</div>
-  {#if randomIdealTalkArray.length > 0 || randomProgressTalkArray.length > 0}
-	  <hr class="my-4 border-red-500 border-2 rounded" />
-    <p class="text-2xl font-bold">Here is the order</p>
-  {/if}
+	{#if randomIdealTalkArray.length > 0 || randomProgressTalkArray.length > 0}
+		<hr class="my-4 border-red-500 border-2 rounded" />
+		<p class="text-2xl font-bold">Here is the order</p>
+	{/if}
 
 	{#if randomIdealTalkArray.length > 0}
 		<div class="flex items-center gap-2 my-4">
 			<p class="text-sm font-semibold">IdeaTalk</p>
-      <button
+			<button
 				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
 				on:click={() => startPresentation('idea')}
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
