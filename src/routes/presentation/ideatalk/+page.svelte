@@ -7,8 +7,8 @@
 	let nextPresenter = '';
 	let customMinutes = 3; // Default input value in minutes (3)
 	let timer = Math.floor(customMinutes * 60);
-	let timerInterval: number | undefined;
 	let isRunning = false;
+	let worker: Worker | undefined;
 
 	onMount(() => {
 		randomIdeaArrayStore.subscribe((value) => {
@@ -27,30 +27,38 @@
 	}
 
 	function pauseTimer() {
-		clearInterval(timerInterval);
-		isRunning = false;
+		if (worker) {
+			worker.postMessage({ action: 'stop' });
+			isRunning = false;
+		}
 	}
 
 	function startPauseTimer() {
+		if (!worker) {
+			worker = new Worker('/random/timerWorker.js');
+			worker.addEventListener('message', (event) => {
+				const speechSynthesis = window.speechSynthesis;
+				let speechUtterance;
+				if (event.data.message === 'update') {
+					timer = event.data.timer;
+				} else if (event.data.message === 'One minute left') {
+					speechUtterance = new SpeechSynthesisUtterance('One minute left');
+				} else if (event.data.message === 'Time is up') {
+					speechUtterance = new SpeechSynthesisUtterance('Time is up');
+					next();
+				}
+				if (speechUtterance) {
+					speechSynthesis.speak(speechUtterance);
+				}
+			});
+		}
+
 		if (isRunning) {
-			clearInterval(timerInterval);
+			worker.postMessage({ action: 'stop' });
 			isRunning = false;
 		} else {
 			isRunning = true;
-			timerInterval = setInterval(() => {
-        const speechSynthesis = window.speechSynthesis;
-				if (timer > 0) {
-					timer--;
-					if (timer === 60) {
-            let speechUtterance = new SpeechSynthesisUtterance('One minute left');
-            speechSynthesis.speak(speechUtterance);
-					}
-				} else {
-          let speechUtterance = new SpeechSynthesisUtterance('Time is up');
-          speechSynthesis.speak(speechUtterance);
-					next();
-				}
-			}, 1000);
+			worker.postMessage({ action: 'start', timer });
 		}
 	}
 
@@ -71,8 +79,10 @@
 		isRunning = false;
 	}
 
-	function addTime() {
-		timer += 60;
+	function addTime(additionalTime: number) {
+		if (worker) {
+			worker.postMessage({ action: 'addTime', additionalTime });
+		}
 	}
 
 	function updateCustomTimer() {
@@ -90,7 +100,7 @@
 				{/if}
 			</div>
 			<p class="monospace text-5xl sm:text-9xl text-center">{formatTime(timer)}</p>
-      <div class="text-xs text-center">
+			<div class="text-xs text-center">
 				Custom timer (minutes):
 				<input
 					id="timeInput"
@@ -99,7 +109,7 @@
 					on:input={updateCustomTimer}
 					min="1"
 					class="border p-1 text-xs rounded w-12"
-          disabled={isRunning}
+					disabled={isRunning}
 				/>
 			</div>
 			<div class="flex gap-2 justify-center flex-wrap my-4">
@@ -115,7 +125,7 @@
 				</button>
 				<button
 					class="bg-red-500 hover:bg-orange-500 text-white py-2 px-4 rounded text-sm flex items-center mb-2"
-					on:click={addTime}
+					on:click={() => addTime(60)}
 					><span class="material-symbols-rounded"> exposure_plus_1 </span>minute</button
 				>
 				<button
@@ -124,7 +134,7 @@
 					><span class="material-symbols-rounded"> skip_next </span>Next presenter</button
 				>
 			</div>
-			
+
 			<hr class="my-4 border-red-500 border-2 rounded" />
 
 			{#if randomArray.slice(currentPresenterIndex + 1).length > 0}
