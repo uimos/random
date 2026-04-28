@@ -2,6 +2,7 @@
 	import { randomProgressArrayStore } from '$lib/stores';
 	import { onMount } from 'svelte';
 	let randomArray: string[] = [];
+	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
 	let currentPresenterIndex = 0;
 	let currentPresenter = '';
 	let nextPresenter = '';
@@ -10,14 +11,41 @@
 	let isRunning = false;
 	let worker: Worker | undefined;
 
+	function getSavedOrder(): string[] {
+		const raw = localStorage.getItem(PROGRESS_ORDER_KEY);
+		if (!raw) return [];
+
+		try {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return parsed.filter((item): item is string => typeof item === 'string');
+			}
+		} catch {
+			return [];
+		}
+
+		return [];
+	}
+
+	function updatePresenters() {
+		if (randomArray.length > 0) {
+			currentPresenter = randomArray[0];
+			nextPresenter = randomArray[1];
+		}
+	}
+
 	onMount(() => {
 		randomProgressArrayStore.subscribe((value) => {
 			randomArray = value;
-			if (randomArray.length > 0) {
-				currentPresenter = randomArray[0];
-				nextPresenter = randomArray[1];
-			}
+			updatePresenters();
 		});
+
+		if (randomArray.length === 0) {
+			const savedOrder = getSavedOrder();
+			if (savedOrder.length > 0) {
+				randomProgressArrayStore.set(savedOrder);
+			}
+		}
 	});
 
 	function formatTime(seconds: number) {

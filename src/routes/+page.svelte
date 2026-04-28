@@ -8,6 +8,48 @@
 	let randomIdealTalkArray: string[] = [];
 	let randomProgressTalkArray: string[] = [];
 	let isExtracting = false;
+	const IDEA_ORDER_KEY = 'randomIdeaOrder';
+	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
+
+	function loadStoredOrder(key: string): string[] {
+		const raw = localStorage.getItem(key);
+		if (!raw) return [];
+
+		try {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return parsed.filter((item): item is string => typeof item === 'string');
+			}
+		} catch {
+			return [];
+		}
+
+		return [];
+	}
+
+	function moveItem(array: string[], fromIndex: number, toIndex: number): string[] {
+		const copied = [...array];
+		const [moved] = copied.splice(fromIndex, 1);
+		copied.splice(toIndex, 0, moved);
+		return copied;
+	}
+
+	let draggingIdeaIndex: number | null = null;
+	let dragOverIdeaIndex: number | null = null;
+	let draggingProgressIndex: number | null = null;
+	let dragOverProgressIndex: number | null = null;
+
+	function saveIdeaOrder(array: string[]) {
+		randomIdealTalkArray = array;
+		randomIdeaArrayStore.set(array);
+		localStorage.setItem(IDEA_ORDER_KEY, JSON.stringify(array));
+	}
+
+	function saveProgressOrder(array: string[]) {
+		randomProgressTalkArray = array;
+		randomProgressArrayStore.set(array);
+		localStorage.setItem(PROGRESS_ORDER_KEY, JSON.stringify(array));
+	}
 
 	onMount(() => {
 		randomIdeaArrayStore.subscribe((value) => {
@@ -16,6 +58,17 @@
 		randomProgressArrayStore.subscribe((value) => {
 			randomProgressTalkArray = value;
 		});
+
+		const savedIdeaOrder = loadStoredOrder(IDEA_ORDER_KEY);
+		if (savedIdeaOrder.length > 0) {
+			randomIdeaArrayStore.set(savedIdeaOrder);
+		}
+
+		const savedProgressOrder = loadStoredOrder(PROGRESS_ORDER_KEY);
+		if (savedProgressOrder.length > 0) {
+			randomProgressArrayStore.set(savedProgressOrder);
+		}
+
 		ideaTalkInput = localStorage.getItem('randomIdeaName') || '';
 		progressTalkInput = localStorage.getItem('randomProgressName') || '';
 	});
@@ -36,13 +89,67 @@
 		if (ideaNameArray.length > 0) {
 			randomIdealTalkArray = shuffleArray(ideaNameArray);
 			randomIdeaArrayStore.set(randomIdealTalkArray);
+			localStorage.setItem(IDEA_ORDER_KEY, JSON.stringify(randomIdealTalkArray));
 			localStorage.setItem('randomIdeaName', ideaTalkInput);
 		}
 		if (progressNameArray.length > 0) {
 			randomProgressTalkArray = shuffleArray(progressNameArray);
 			randomProgressArrayStore.set(randomProgressTalkArray);
+			localStorage.setItem(PROGRESS_ORDER_KEY, JSON.stringify(randomProgressTalkArray));
 			localStorage.setItem('randomProgressName', progressTalkInput);
 		}
+	}
+
+	function handleIdeaDragStart(index: number) {
+		draggingIdeaIndex = index;
+	}
+
+	function handleIdeaDragOver(event: DragEvent, index: number) {
+		event.preventDefault();
+		dragOverIdeaIndex = index;
+	}
+
+	function handleIdeaDrop(index: number) {
+		if (draggingIdeaIndex === null || draggingIdeaIndex === index) {
+			draggingIdeaIndex = null;
+			dragOverIdeaIndex = null;
+			return;
+		}
+
+		saveIdeaOrder(moveItem(randomIdealTalkArray, draggingIdeaIndex, index));
+		draggingIdeaIndex = null;
+		dragOverIdeaIndex = null;
+	}
+
+	function handleIdeaDragEnd() {
+		draggingIdeaIndex = null;
+		dragOverIdeaIndex = null;
+	}
+
+	function handleProgressDragStart(index: number) {
+		draggingProgressIndex = index;
+	}
+
+	function handleProgressDragOver(event: DragEvent, index: number) {
+		event.preventDefault();
+		dragOverProgressIndex = index;
+	}
+
+	function handleProgressDrop(index: number) {
+		if (draggingProgressIndex === null || draggingProgressIndex === index) {
+			draggingProgressIndex = null;
+			dragOverProgressIndex = null;
+			return;
+		}
+
+		saveProgressOrder(moveItem(randomProgressTalkArray, draggingProgressIndex, index));
+		draggingProgressIndex = null;
+		dragOverProgressIndex = null;
+	}
+
+	function handleProgressDragEnd() {
+		draggingProgressIndex = null;
+		dragOverProgressIndex = null;
 	}
 
 	function startPresentation(category: string) {
@@ -62,6 +169,8 @@
 		randomProgressTalkArray = [];
 		localStorage.removeItem('randomIdeaName');
 		localStorage.removeItem('randomProgressName');
+		localStorage.removeItem(IDEA_ORDER_KEY);
+		localStorage.removeItem(PROGRESS_ORDER_KEY);
 	}
 
 	async function extractFormResponses() {
@@ -160,15 +269,27 @@ Danny"
 	{#if randomIdealTalkArray.length > 0}
 		<div class="flex items-center gap-2 my-4">
 			<p class="text-sm font-semibold">IdeaTalk</p>
+			<p class="text-xs text-slate-500">Drag rows to reorder</p>
 			<button
 				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
 				on:click={() => startPresentation('idea')}
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
 		</div>
-		<ol class="list-decimal list-inside">
-			{#each randomIdealTalkArray as item}
-				<li>{item}</li>
+		<ol class="space-y-2">
+			{#each randomIdealTalkArray as item, index}
+				<li
+					class="flex items-center gap-2 border rounded p-2 bg-white cursor-move {dragOverIdeaIndex === index ? 'border-red-400 border-2' : ''}"
+					draggable="true"
+					on:dragstart={() => handleIdeaDragStart(index)}
+					on:dragover={(event) => handleIdeaDragOver(event, index)}
+					on:drop={() => handleIdeaDrop(index)}
+					on:dragend={handleIdeaDragEnd}
+				>
+					<span class="w-6 text-right">{index + 1}.</span>
+					<span class="material-symbols-rounded text-sm text-slate-500"> drag_indicator </span>
+					<span class="flex-1">{item}</span>
+				</li>
 			{/each}
 		</ol>
 	{/if}
@@ -176,15 +297,27 @@ Danny"
 	{#if randomProgressTalkArray.length > 0}
 		<div class="flex items-center gap-2 my-4">
 			<p class="text-sm font-semibold">ProgressTalk</p>
+			<p class="text-xs text-slate-500">Drag rows to reorder</p>
 			<button
 				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
 				on:click={() => startPresentation('progress')}
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
 		</div>
-		<ol class="list-decimal list-inside">
-			{#each randomProgressTalkArray as item}
-				<li>{item}</li>
+		<ol class="space-y-2">
+			{#each randomProgressTalkArray as item, index}
+				<li
+					class="flex items-center gap-2 border rounded p-2 bg-white cursor-move {dragOverProgressIndex === index ? 'border-red-400 border-2' : ''}"
+					draggable="true"
+					on:dragstart={() => handleProgressDragStart(index)}
+					on:dragover={(event) => handleProgressDragOver(event, index)}
+					on:drop={() => handleProgressDrop(index)}
+					on:dragend={handleProgressDragEnd}
+				>
+					<span class="w-6 text-right">{index + 1}.</span>
+					<span class="material-symbols-rounded text-sm text-slate-500"> drag_indicator </span>
+					<span class="flex-1">{item}</span>
+				</li>
 			{/each}
 		</ol>
 	{/if}
