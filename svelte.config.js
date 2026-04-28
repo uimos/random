@@ -9,11 +9,11 @@ const config = {
 		adapter: adapter({
 			pages: 'build',
 			assets: 'build',
-			fallback: 'index.html',
+			fallback: 'index.html'
 		}),
 		paths: {
-      base: '/random'
-    },
+			base: '/random'
+		},
 		prerender: {
 			handleMissingId: 'warn'
 		}

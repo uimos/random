@@ -67,7 +67,8 @@
 	async function extractFormResponses() {
 		let ideaTalks: string[] = [];
 		let progressTalks: string[] = [];
-		let url: string = 'https://script.google.com/macros/s/AKfycbwzW7HkzwOnFGcKGKL4Hbi5WebdtXLs8HJsWPtnPi416remuW5Bgg1mVXrpHuR_sHoy/exec';
+		let url: string =
+			'https://script.google.com/macros/s/AKfycbwzW7HkzwOnFGcKGKL4Hbi5WebdtXLs8HJsWPtnPi416remuW5Bgg1mVXrpHuR_sHoy/exec';
 
 		isExtracting = true;
 		let formResponses = await fetch(url);

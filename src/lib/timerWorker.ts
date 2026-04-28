@@ -1,30 +1,41 @@
-self.addEventListener('message', (event) => {
-  if (event.data.action === 'start') {
-    startTimer(event.data.timer);
-  } else if (event.data.action === 'stop') {
-    clearInterval(self.timerInterval);
-  } else if (event.data.action === 'addTime') {
-    addTime(event.data.additionalTime);
-  }
+type WorkerActionMessage = {
+	action: 'start' | 'stop' | 'addTime';
+	timer?: number;
+	additionalTime?: number;
+};
+
+const ctx = self as unknown as Worker;
+let currentTimer = 0;
+let timerInterval: ReturnType<typeof setInterval> | undefined;
+
+ctx.addEventListener('message', (event: MessageEvent<WorkerActionMessage>) => {
+	if (event.data.action === 'start') {
+		startTimer(event.data.timer ?? 0);
+	} else if (event.data.action === 'stop') {
+		if (timerInterval) clearInterval(timerInterval);
+	} else if (event.data.action === 'addTime') {
+		addTime(event.data.additionalTime ?? 0);
+	}
 });
 
 function startTimer(timer: number) {
-  self.currentTimer = timer;
-  self.timerInterval = setInterval(() => {
-    if (self.currentTimer > 0) {
-      self.currentTimer--;
-      self.postMessage({ message: 'update', timer: self.currentTimer });
-      if (self.currentTimer === 60) {
-        self.postMessage({ message: 'One minute left' });
-      }
-    } else {
-      clearInterval(self.timerInterval);
-      self.postMessage({ message: 'Time is up' });
-    }
-  }, 1000);
+	currentTimer = timer;
+	if (timerInterval) clearInterval(timerInterval);
+	timerInterval = setInterval(() => {
+		if (currentTimer > 0) {
+			currentTimer--;
+			ctx.postMessage({ message: 'update', timer: currentTimer });
+			if (currentTimer === 60) {
+				ctx.postMessage({ message: 'One minute left' });
+			}
+		} else {
+			if (timerInterval) clearInterval(timerInterval);
+			ctx.postMessage({ message: 'Time is up' });
+		}
+	}, 1000);
 }
 
 function addTime(additionalTime: number) {
-  self.currentTimer += additionalTime;
-  self.postMessage({ message: 'update', timer: self.currentTimer });
+	currentTimer += additionalTime;
+	ctx.postMessage({ message: 'update', timer: currentTimer });
 }
