@@ -17,7 +17,7 @@
 		<div>
 			<div class="flex flex-row gap-3">
 				<div>Hackerspace MMU</div>
-				<div>v4.1.0</div>
+				<div>v4.1.1</div>
 			</div>
 		</div>
 	</footer>

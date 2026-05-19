@@ -154,9 +154,9 @@
 
 	function startPresentation(category: string) {
 		if (category === 'idea') {
-			goto('presentation/ideatalk');
+			goto('presentation/ideatalk/');
 		} else {
-			goto('presentation/progresstalk');
+			goto('presentation/progresstalk/');
 		}
 	}
 
