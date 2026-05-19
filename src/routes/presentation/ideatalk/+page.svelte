@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { randomIdeaArrayStore } from '$lib/stores';
+	import TimerWorker from '$lib/timerWorker.ts?worker';
 	import { onMount } from 'svelte';
 	let randomArray: string[] = [];
 	const IDEA_ORDER_KEY = 'randomIdeaOrder';
@@ -63,7 +64,7 @@
 
 	function startPauseTimer() {
 		if (!worker) {
-			worker = new Worker('/random/timerWorker.js');
+			worker = new TimerWorker();
 			worker.addEventListener('message', (event) => {
 				const speechSynthesis = window.speechSynthesis;
 				let speechUtterance;
