@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { randomIdeaArrayStore, randomProgressArrayStore } from '$lib/stores';
+	import { authSessionStore, randomIdeaArrayStore, randomProgressArrayStore } from '$lib/stores';
 	import { goto } from '$app/navigation';
 
 	let ideaTalkInput = '';
@@ -8,8 +8,50 @@
 	let randomIdealTalkArray: string[] = [];
 	let randomProgressTalkArray: string[] = [];
 	let isExtracting = false;
+	let apiPassword = '';
+	let isAuthenticating = false;
+	let authError = '';
+	let isSessionValid = false;
 	const IDEA_ORDER_KEY = 'randomIdeaOrder';
 	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
+	const SESSION_STORAGE_KEY = 'publicApiSession';
+	const EXTERNAL_API_BASE_URL = (import.meta.env.VITE_EXTERNAL_API_BASE_URL || '').replace(/\/$/, '');
+
+	const DEFAULT_SESSION_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2 hours
+
+	function getSessionTokenFromAuthPayload(authenticatePayload: any): string {
+		return (
+			authenticatePayload?.session_token ||
+			''
+		);
+	}
+
+	function getSessionTokenExpiryFromAuthPayload(authenticatePayload: any): number {
+		const expiresInSeconds = Number(
+			authenticatePayload?.expires_in ||
+			DEFAULT_SESSION_TOKEN_TTL_SECONDS
+		);
+
+		const safeSeconds =
+			Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+				? expiresInSeconds
+				: DEFAULT_SESSION_TOKEN_TTL_SECONDS;
+
+		const refreshBufferSeconds = 10;
+		return Date.now() + Math.max(1, safeSeconds - refreshBufferSeconds) * 1000;
+	}
+
+	function saveSession(session: { token: string; expiresAt: number }) {
+		authSessionStore.set(session);
+		sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+	}
+
+	function clearSession() {
+		authSessionStore.set({ token: '', expiresAt: 0 });
+		sessionStorage.removeItem(SESSION_STORAGE_KEY);
+	}
+
+	$: isSessionValid = $authSessionStore.token.length > 0 && Date.now() < $authSessionStore.expiresAt;
 
 	function loadStoredOrder(key: string): string[] {
 		const raw = localStorage.getItem(key);
@@ -71,7 +113,79 @@
 
 		ideaTalkInput = localStorage.getItem('randomIdeaName') || '';
 		progressTalkInput = localStorage.getItem('randomProgressName') || '';
+
+		const storedSession = sessionStorage.getItem(SESSION_STORAGE_KEY);
+		if (storedSession) {
+			try {
+				const parsed = JSON.parse(storedSession);
+				if (typeof parsed?.token === 'string' && typeof parsed?.expiresAt === 'number') {
+					authSessionStore.set({ token: parsed.token, expiresAt: parsed.expiresAt });
+				}
+			} catch {
+				sessionStorage.removeItem(SESSION_STORAGE_KEY);
+			}
+		}
 	});
+
+	async function authenticateSession() {
+		authError = '';
+		if (!EXTERNAL_API_BASE_URL) {
+			authError = 'Missing VITE_EXTERNAL_API_BASE_URL configuration.';
+			return;
+		}
+
+		if (!apiPassword.trim()) {
+			authError = 'Please enter password.';
+			return;
+		}
+
+		isAuthenticating = true;
+		try {
+			const authenticateResponse = await fetch(`${EXTERNAL_API_BASE_URL}/api/v1/public/authenticate`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ password: apiPassword })
+			});
+
+			if (!authenticateResponse.ok) {
+				if (authenticateResponse.status === 401) {
+					throw new Error('Wrong password.');
+				}
+				if (authenticateResponse.status === 400) {
+					throw new Error('Password is required.');
+				}
+				const detail = await authenticateResponse.text();
+				throw new Error(`Authenticate failed (${authenticateResponse.status}): ${detail}`);
+			}
+
+			const authenticatePayload = await authenticateResponse.json();
+			const sessionToken = getSessionTokenFromAuthPayload(authenticatePayload);
+
+			if (!sessionToken) {
+				throw new Error('Authenticate response does not contain session token.');
+			}
+
+			saveSession({
+				token: sessionToken,
+				expiresAt: getSessionTokenExpiryFromAuthPayload(authenticatePayload)
+			});
+			apiPassword = '';
+		} catch (error) {
+			authError = error instanceof Error ? error.message : 'Authentication failed.';
+			clearSession();
+		} finally {
+			isAuthenticating = false;
+		}
+	}
+
+	function handlePasswordKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void authenticateSession();
+		}
+	}
 
 	function shuffleArray(array: string[]) {
 		for (var i = array.length - 1; i > 0; i--) {
@@ -171,6 +285,7 @@
 		localStorage.removeItem('randomProgressName');
 		localStorage.removeItem(IDEA_ORDER_KEY);
 		localStorage.removeItem(PROGRESS_ORDER_KEY);
+		clearSession();
 	}
 
 	async function extractFormResponses() {
@@ -213,6 +328,36 @@
 			here
 		</a>
 	</p>
+	<div class="my-4 p-3 border border-stone-300 rounded bg-white">
+		<div class="flex gap-2 flex-wrap items-center text-sm">
+			<p class="text-xs">{isSessionValid ? '🟢' : '🔴'}</p>
+			<p class="font-semibold">
+				{isSessionValid
+					? 'Logged in (HackTrack context for ProgressTalks)'
+					: 'Login (HackTrack context for ProgressTalks)'}
+			</p>
+			{#if !isSessionValid}
+				<input
+					id="mainApiPassword"
+					type="password"
+					bind:value={apiPassword}
+					placeholder="Password"
+					class="text-black p-2 rounded border border-stone-300"
+					on:keydown={handlePasswordKeydown}
+				/>
+				<button
+					class="bg-red-500 hover:bg-orange-500 text-white py-2 px-4 rounded"
+					on:click={authenticateSession}
+					disabled={isAuthenticating}
+				>
+					{isAuthenticating ? 'Logging in...' : 'Login'}
+				</button>
+			{/if}
+		</div>
+		{#if authError}
+			<p class="text-red-600 text-sm mt-2">{authError}</p>
+		{/if}
+	</div>
 	<div class="textarea flex gap-2 w-full my-4">
 		<div class="w-1/2">
 			<p class="font-semibold my-2 text-sm">IdeaTalk</p>

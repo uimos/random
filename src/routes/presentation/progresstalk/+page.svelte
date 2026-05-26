@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { randomProgressArrayStore } from '$lib/stores';
+	import { authSessionStore, randomProgressArrayStore } from '$lib/stores';
 	import TimerWorker from '$lib/timerWorker.ts?worker';
+	import QRCode from 'qrcode';
 	import { onMount } from 'svelte';
 	let randomArray: string[] = [];
 	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
+	const EXTERNAL_API_BASE_URL = (import.meta.env.VITE_EXTERNAL_API_BASE_URL || '').replace(/\/$/, '');
 	let currentPresenterIndex = 0;
 	let currentPresenter = '';
 	let nextPresenter = '';
@@ -11,6 +13,48 @@
 	let timer = Math.floor(customMinutes * 60);
 	let isRunning = false;
 	let worker: Worker | undefined;
+	let isGeneratingActivationLink = false;
+	let activationError = '';
+	let activationResponse: { url: string; member_name?: string; expires_in?: number } | null = null;
+	let qrCodeDataUrl = '';
+	let isQrWidgetMinimized = false;
+	let hasCopiedLink = false;
+	const SESSION_STORAGE_KEY = 'publicApiSession';
+
+	function getValidSharedSessionToken(): string {
+		if ($authSessionStore.token && Date.now() < $authSessionStore.expiresAt) {
+			return $authSessionStore.token;
+		}
+		return '';
+	}
+
+	function clearSharedSessionToken() {
+		authSessionStore.set({ token: '', expiresAt: 0 });
+		sessionStorage.removeItem(SESSION_STORAGE_KEY);
+	}
+
+	async function activateWithToken(sessionToken: string) {
+		const activateResponse = await fetch(`${EXTERNAL_API_BASE_URL}/api/v1/public/activate`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${sessionToken}`
+			},
+			body: JSON.stringify({ name: currentPresenter })
+		});
+
+		if (!activateResponse.ok) {
+			if (activateResponse.status === 400) {
+				throw new Error('Presenter name is required.');
+			} else if (activateResponse.status === 404) {
+				throw new Error('Name not found in HackTrack.');
+			}
+			const detail = await activateResponse.text();
+			throw new Error(`Activate failed (${activateResponse.status}): ${detail}`);
+		}
+
+		return activateResponse.json();
+	}
 
 	function getSavedOrder(): string[] {
 		const raw = localStorage.getItem(PROGRESS_ORDER_KEY);
@@ -32,10 +76,31 @@
 		if (randomArray.length > 0) {
 			currentPresenter = randomArray[0];
 			nextPresenter = randomArray[1];
+			clearActivationState();
+			void generateActivationLink();
 		}
 	}
 
+	function clearActivationState() {
+		activationError = '';
+		activationResponse = null;
+		qrCodeDataUrl = '';
+		hasCopiedLink = false;
+	}
+
 	onMount(() => {
+		const storedSession = sessionStorage.getItem(SESSION_STORAGE_KEY);
+		if (storedSession) {
+			try {
+				const parsed = JSON.parse(storedSession);
+				if (typeof parsed?.token === 'string' && typeof parsed?.expiresAt === 'number') {
+					authSessionStore.set({ token: parsed.token, expiresAt: parsed.expiresAt });
+				}
+			} catch {
+				sessionStorage.removeItem(SESSION_STORAGE_KEY);
+			}
+		}
+
 		randomProgressArrayStore.subscribe((value) => {
 			randomArray = value;
 			updatePresenters();
@@ -97,7 +162,9 @@
 			currentPresenterIndex++;
 			currentPresenter = randomArray[currentPresenterIndex];
 			nextPresenter = randomArray[currentPresenterIndex + 1];
+			clearActivationState();
 			resetTimer();
+			void generateActivationLink();
 		} else {
 			alert('Presentation complete!');
 		}
@@ -116,6 +183,72 @@
 
 	function updateCustomTimer() {
 		timer = Math.floor(customMinutes * 60);
+	}
+
+	async function copyActivationUrl() {
+		if (!activationResponse?.url) return;
+		await navigator.clipboard.writeText(activationResponse.url);
+		hasCopiedLink = true;
+	}
+
+	async function generateActivationLink() {
+		activationError = '';
+		activationResponse = null;
+		qrCodeDataUrl = '';
+
+		if (!EXTERNAL_API_BASE_URL) {
+			activationError = 'Missing VITE_EXTERNAL_API_BASE_URL configuration.';
+			return;
+		}
+
+		if (!currentPresenter.trim()) {
+			activationError = 'No current presenter found.';
+			return;
+		}
+
+		isGeneratingActivationLink = true;
+
+		try {
+			const sessionToken = getValidSharedSessionToken();
+			if (!sessionToken) {
+				activationError = 'Session token missing or expired. Please authenticate on the main page.';
+				return;
+			}
+
+			let activatePayload;
+			try {
+				activatePayload = await activateWithToken(sessionToken);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : '';
+				if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
+					clearSharedSessionToken();
+					activationError = 'Session expired. Please re-authenticate on the main page.';
+					return;
+				} else {
+					throw error;
+				}
+			}
+
+			if (!activatePayload?.url) {
+				throw new Error('Activate response does not contain url.');
+			}
+
+			activationResponse = {
+				url: activatePayload.url,
+				member_name: activatePayload.member_name,
+				expires_in: activatePayload.expires_in
+			};
+			hasCopiedLink = false;
+
+			qrCodeDataUrl = await QRCode.toDataURL(activatePayload.url, {
+				width: 280,
+				margin: 1
+			});
+		} catch (error) {
+			activationError = error instanceof Error ? error.message : 'Unknown error while generating link.';
+		} finally {
+			isGeneratingActivationLink = false;
+		}
 	}
 </script>
 
@@ -188,4 +321,60 @@
 		class="bg-red-500 hover:bg-orange-500 text-white py-2 px-4 rounded"
 		on:click={() => history.back()}>Back</button
 	>
+</div>
+
+<div
+	class={`fixed right-4 z-50 text-black ${isQrWidgetMinimized ? 'bottom-16 w-auto max-w-none' : 'bottom-20 w-80 max-w-[calc(100vw-2rem)]'}`}
+>
+	{#if isQrWidgetMinimized}
+		<button
+			class="bg-red-500 hover:bg-orange-500 text-white px-4 py-2 rounded-full shadow-lg text-sm"
+			on:click={() => (isQrWidgetMinimized = false)}
+		>
+			Recent talk
+		</button>
+	{:else}
+		<div class="border border-red-200 rounded p-4 bg-white shadow-lg">
+			<div class="flex items-center justify-between mb-2">
+				<p class="font-semibold">This member's recent talk:</p>
+				<button
+					class="text-xs px-2 py-1 border border-stone-300 rounded hover:bg-stone-100"
+					on:click={() => (isQrWidgetMinimized = true)}
+				>
+					Minimize
+				</button>
+			</div>
+
+			{#if isGeneratingActivationLink}
+				<p class="text-xs text-slate-600 mb-2">Generating link...</p>
+			{/if}
+
+			{#if activationError}
+				<p class="text-red-600 text-sm mt-2">{activationError}</p>
+			{/if}
+
+			{#if activationResponse && qrCodeDataUrl}
+				<div class="mt-4 bg-stone-50 border border-stone-200 rounded p-3">
+					{#if activationResponse.member_name}
+						<p class="text-xs font-semibold">Member: {activationResponse.member_name}</p>
+					{/if}
+					{#if activationResponse.expires_in}
+						<p class="text-xs mt-1">Expires in: {activationResponse.expires_in}</p>
+					{/if}
+					<div class="flex items-center gap-2 mt-2">
+						<button
+							class="bg-stone-200 hover:bg-stone-300 text-black py-1 px-3 rounded text-xs"
+							on:click={copyActivationUrl}
+						>
+							Copy link
+						</button>
+						{#if hasCopiedLink}
+							<p class="text-xs text-green-700">Copied</p>
+						{/if}
+					</div>
+					<img src={qrCodeDataUrl} alt="Member activation QR code" class="rounded w-full h-auto mt-3" />
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>
