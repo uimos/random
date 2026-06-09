@@ -12,8 +12,8 @@
 	let isAuthenticating = false;
 	let authError = '';
 	let isSessionValid = false;
-	let copiedOrder: 'idea' | 'progress' | null = null;
-	let copyError: 'idea' | 'progress' | null = null;
+	let copiedOrder = false;
+	let copyError = false;
 	let copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
 	const IDEA_ORDER_KEY = 'randomIdeaOrder';
 	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
@@ -201,20 +201,19 @@
 	}
 
 	function submit() {
-		let ideaNameArray = ideaTalkInput.split(/,|\n/).filter((item) => item.trim() !== '');
-		let progressNameArray = progressTalkInput.split(/,|\n/).filter((item) => item.trim() !== '');
-		if (ideaNameArray.length > 0) {
-			randomIdealTalkArray = shuffleArray(ideaNameArray);
-			randomIdeaArrayStore.set(randomIdealTalkArray);
-			localStorage.setItem(IDEA_ORDER_KEY, JSON.stringify(randomIdealTalkArray));
-			localStorage.setItem('randomIdeaName', ideaTalkInput);
-		}
-		if (progressNameArray.length > 0) {
-			randomProgressTalkArray = shuffleArray(progressNameArray);
-			randomProgressArrayStore.set(randomProgressTalkArray);
-			localStorage.setItem(PROGRESS_ORDER_KEY, JSON.stringify(randomProgressTalkArray));
-			localStorage.setItem('randomProgressName', progressTalkInput);
-		}
+		const ideaNameArray = ideaTalkInput
+			.split(/,|\n/)
+			.map((item) => item.trim())
+			.filter(Boolean);
+		const progressNameArray = progressTalkInput
+			.split(/,|\n/)
+			.map((item) => item.trim())
+			.filter(Boolean);
+
+		saveIdeaOrder(shuffleArray(ideaNameArray));
+		saveProgressOrder(shuffleArray(progressNameArray));
+		localStorage.setItem('randomIdeaName', ideaTalkInput);
+		localStorage.setItem('randomProgressName', progressTalkInput);
 	}
 
 	function handleIdeaDragStart(index: number) {
@@ -277,25 +276,34 @@
 		}
 	}
 
-	async function copyOrder(array: string[], category: 'idea' | 'progress') {
-		const order = array.map((item) => item.trim()).join('\n');
+	async function copyAllOrders() {
+		const sections = [
+			{ heading: 'IdeaTalk', names: randomIdealTalkArray },
+			{ heading: 'ProgressTalk', names: randomProgressTalkArray }
+		]
+			.map(({ heading, names }) => {
+				const cleanNames = names.map((name) => name.trim()).filter(Boolean);
+				const numberedNames = cleanNames.map((name, index) => `${index + 1}. ${name}`);
+				return numberedNames.length > 0 ? `${heading}\n${numberedNames.join('\n')}` : '';
+			})
+			.filter(Boolean);
 
 		try {
-			await navigator.clipboard.writeText(order);
+			await navigator.clipboard.writeText(sections.join('\n\n'));
 		} catch {
-			copyError = category;
-			copiedOrder = null;
+			copyError = true;
+			copiedOrder = false;
 			return;
 		}
 
-		copyError = null;
-		copiedOrder = category;
+		copyError = false;
+		copiedOrder = true;
 		if (copyFeedbackTimeout) {
 			clearTimeout(copyFeedbackTimeout);
 		}
 		copyFeedbackTimeout = setTimeout(() => {
-			copiedOrder = null;
-			copyError = null;
+			copiedOrder = false;
+			copyError = false;
 		}, 2000);
 	}
 
@@ -433,7 +441,23 @@ Danny"
 	</div>
 	{#if randomIdealTalkArray.length > 0 || randomProgressTalkArray.length > 0}
 		<hr class="my-4 border-red-500 border-2 rounded" />
-		<p class="text-2xl font-bold">Here is the order</p>
+		<div class="flex items-center gap-2">
+			<p class="text-2xl font-bold">Here is the order</p>
+			<button
+				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
+				on:click={copyAllOrders}
+				title={copyError ? 'Unable to copy' : copiedOrder ? 'Copied!' : 'Copy all orders'}
+				aria-label={copyError
+					? 'Unable to copy all orders'
+					: copiedOrder
+						? 'All orders copied'
+						: 'Copy all orders'}
+			>
+				<span class="material-symbols-rounded text-sm">
+					{copyError ? 'error' : copiedOrder ? 'check' : 'content_copy'}
+				</span>
+			</button>
+		</div>
 	{/if}
 
 	{#if randomIdealTalkArray.length > 0}
@@ -447,24 +471,6 @@ Danny"
 				aria-label="Present IdeaTalk order"
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
-			<button
-				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
-				on:click={() => copyOrder(randomIdealTalkArray, 'idea')}
-				title={copyError === 'idea'
-					? 'Unable to copy'
-					: copiedOrder === 'idea'
-						? 'Copied!'
-						: 'Copy IdeaTalk order'}
-				aria-label={copyError === 'idea'
-					? 'Unable to copy IdeaTalk order'
-					: copiedOrder === 'idea'
-						? 'IdeaTalk order copied'
-						: 'Copy IdeaTalk order'}
-			>
-				<span class="material-symbols-rounded text-sm">
-					{copyError === 'idea' ? 'error' : copiedOrder === 'idea' ? 'check' : 'content_copy'}
-				</span>
-			</button>
 		</div>
 		<ol class="space-y-2">
 			{#each randomIdealTalkArray as item, index}
@@ -495,28 +501,6 @@ Danny"
 				aria-label="Present ProgressTalk order"
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
-			<button
-				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
-				on:click={() => copyOrder(randomProgressTalkArray, 'progress')}
-				title={copyError === 'progress'
-					? 'Unable to copy'
-					: copiedOrder === 'progress'
-						? 'Copied!'
-						: 'Copy ProgressTalk order'}
-				aria-label={copyError === 'progress'
-					? 'Unable to copy ProgressTalk order'
-					: copiedOrder === 'progress'
-						? 'ProgressTalk order copied'
-						: 'Copy ProgressTalk order'}
-			>
-				<span class="material-symbols-rounded text-sm">
-					{copyError === 'progress'
-						? 'error'
-						: copiedOrder === 'progress'
-							? 'check'
-							: 'content_copy'}
-				</span>
-			</button>
 		</div>
 		<ol class="space-y-2">
 			{#each randomProgressTalkArray as item, index}
