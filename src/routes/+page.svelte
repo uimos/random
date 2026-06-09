@@ -12,6 +12,9 @@
 	let isAuthenticating = false;
 	let authError = '';
 	let isSessionValid = false;
+	let copiedOrder: 'idea' | 'progress' | null = null;
+	let copyError: 'idea' | 'progress' | null = null;
+	let copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
 	const IDEA_ORDER_KEY = 'randomIdeaOrder';
 	const PROGRESS_ORDER_KEY = 'randomProgressOrder';
 	const SESSION_STORAGE_KEY = 'publicApiSession';
@@ -274,6 +277,28 @@
 		}
 	}
 
+	async function copyOrder(array: string[], category: 'idea' | 'progress') {
+		const order = array.map((item) => item.trim()).join('\n');
+
+		try {
+			await navigator.clipboard.writeText(order);
+		} catch {
+			copyError = category;
+			copiedOrder = null;
+			return;
+		}
+
+		copyError = null;
+		copiedOrder = category;
+		if (copyFeedbackTimeout) {
+			clearTimeout(copyFeedbackTimeout);
+		}
+		copyFeedbackTimeout = setTimeout(() => {
+			copiedOrder = null;
+			copyError = null;
+		}, 2000);
+	}
+
 	function clearAll() {
 		randomIdeaArrayStore.set([]);
 		randomProgressArrayStore.set([]);
@@ -418,8 +443,28 @@ Danny"
 			<button
 				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
 				on:click={() => startPresentation('idea')}
+				title="Present IdeaTalk order"
+				aria-label="Present IdeaTalk order"
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
+			<button
+				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
+				on:click={() => copyOrder(randomIdealTalkArray, 'idea')}
+				title={copyError === 'idea'
+					? 'Unable to copy'
+					: copiedOrder === 'idea'
+						? 'Copied!'
+						: 'Copy IdeaTalk order'}
+				aria-label={copyError === 'idea'
+					? 'Unable to copy IdeaTalk order'
+					: copiedOrder === 'idea'
+						? 'IdeaTalk order copied'
+						: 'Copy IdeaTalk order'}
+			>
+				<span class="material-symbols-rounded text-sm">
+					{copyError === 'idea' ? 'error' : copiedOrder === 'idea' ? 'check' : 'content_copy'}
+				</span>
+			</button>
 		</div>
 		<ol class="space-y-2">
 			{#each randomIdealTalkArray as item, index}
@@ -446,8 +491,32 @@ Danny"
 			<button
 				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
 				on:click={() => startPresentation('progress')}
+				title="Present ProgressTalk order"
+				aria-label="Present ProgressTalk order"
 				><span class="material-symbols-rounded text-sm"> co_present </span></button
 			>
+			<button
+				class="bg-red-500 hover:bg-orange-500 text-white px-2 rounded text-sm flex items-center"
+				on:click={() => copyOrder(randomProgressTalkArray, 'progress')}
+				title={copyError === 'progress'
+					? 'Unable to copy'
+					: copiedOrder === 'progress'
+						? 'Copied!'
+						: 'Copy ProgressTalk order'}
+				aria-label={copyError === 'progress'
+					? 'Unable to copy ProgressTalk order'
+					: copiedOrder === 'progress'
+						? 'ProgressTalk order copied'
+						: 'Copy ProgressTalk order'}
+			>
+				<span class="material-symbols-rounded text-sm">
+					{copyError === 'progress'
+						? 'error'
+						: copiedOrder === 'progress'
+							? 'check'
+							: 'content_copy'}
+				</span>
+			</button>
 		</div>
 		<ol class="space-y-2">
 			{#each randomProgressTalkArray as item, index}
